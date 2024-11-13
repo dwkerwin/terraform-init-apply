@@ -41,10 +41,11 @@ export PATH="$HOME/bin/terraform-init-apply:$PATH"
 source ~/.zshrc
 ```
 
-4. Ensure the script is executable:
+4. Ensure the script is executable and create a symlink so the script can be called without the .sh extension:
 
 ```bash
 chmod +x ~/bin/terraform-init-apply/tia.sh
+ln -s ~/bin/terraform-init-apply/tia.sh ~/bin/terraform-init-apply/tia
 ```
 
 ## Usage
