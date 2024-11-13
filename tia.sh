@@ -12,19 +12,22 @@ while getopts "ap" opt; do
     *) echo "Invalid option: -$OPTARG" >&2; exit 1 ;;
   esac
 done
-shift $((OPTIND -1))
+shift $((OPTIND - 1))
 
-# Prompt for AWS_ENV with a default option
-echo -n "AWS_ENV [${AWS_ENV:-'None'}]: "
-read input
-AWS_ENV=${input:-$AWS_ENV}
-export AWS_ENV=$AWS_ENV
+# Check for required environment variables
+missing_vars=()
+[[ -z "$AWS_ENV" ]] && missing_vars+=("AWS_ENV")
+[[ -z "$AWS_PROFILE" ]] && missing_vars+=("AWS_PROFILE")
+[[ -z "$TF_KEY" ]] && missing_vars+=("TF_KEY")
 
-# Prompt for AWS_PROFILE with a default option
-echo -n "AWS_PROFILE [${AWS_PROFILE:-'None'}]: "
-read input
-AWS_PROFILE=${input:-$AWS_PROFILE}
-export AWS_PROFILE=$AWS_PROFILE
+if [[ ${#missing_vars[@]} -gt 0 ]]; then
+  echo -e "\n❌ Missing required environment variables:"
+  for var in "${missing_vars[@]}"; do
+    echo "  - $var"
+  done
+  echo -e "\nPlease export the missing variables and try again."
+  exit 1
+fi
 
 # Determine the bucket prefix based on the profile
 PROFILE_PREFIX=${AWS_PROFILE%%-*} # Extract the first part of AWS_PROFILE
@@ -40,20 +43,10 @@ else
     exit 1
 fi
 
-# Display the derived bucket prefix
-echo "Bucket prefix derived as: $TF_BUCKET_PREFIX"
-
-# Prompt for TF_KEY with a default option
-echo -n "TF_KEY [${TF_KEY:-'None'}]: "
-read input
-TF_KEY=${input:-$TF_KEY}
-export TF_KEY=$TF_KEY
-
-# Construct the full bucket name and display it for confirmation
+# Construct the full bucket name
 TF_BUCKET="s3://${TF_BUCKET_PREFIX}-tfstate-${AWS_ENV}"
-echo "TF_BUCKET set to: $TF_BUCKET"
 
-# Confirm all environment variables before proceeding
+# Review the settings
 echo -e "\n🔍 Review the following settings:"
 echo "AWS_ENV: $AWS_ENV"
 echo "AWS_PROFILE: $AWS_PROFILE"
