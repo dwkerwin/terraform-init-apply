@@ -2,13 +2,11 @@
 
 # Default values for optional flags
 apply_only=false
-use_parent_directory=false
 
 # Parse optional flags
-while getopts "ap" opt; do
+while getopts "a" opt; do
   case $opt in
     a) apply_only=true ;;
-    p) use_parent_directory=true ;;
     *) echo "Invalid option: -$OPTARG" >&2; exit 1 ;;
   esac
 done
@@ -46,12 +44,33 @@ fi
 # Construct the full bucket name
 TF_BUCKET="s3://${TF_BUCKET_PREFIX}-tfstate-${AWS_ENV}"
 
+# Check for tfvars file location
+var_file="env-${AWS_ENV}.tfvars"
+var_file_path=""
+
+if [[ -f "./${var_file}" ]]; then
+    var_file_path="./${var_file}"
+elif [[ -f "../${var_file}" ]]; then
+    var_file_path="../${var_file}"
+    echo -e "\n⚠️  Note: Using tfvars file from parent directory: ../${var_file}"
+    echo -n "Continue with parent directory tfvars file? (y/N): "
+    read parent_confirm
+    if [[ ! $parent_confirm == [yY] ]]; then
+        echo "❌ Operation canceled."
+        exit 1
+    fi
+else
+    echo -e "\n❌ Error: Could not find ${var_file} in current or parent directory"
+    exit 1
+fi
+
 # Review the settings
 echo -e "\n🔍 Review the following settings:"
 echo "AWS_ENV: $AWS_ENV"
 echo "AWS_PROFILE: $AWS_PROFILE"
 echo "TF_KEY: $TF_KEY"
 echo "TF_BUCKET: $TF_BUCKET"
+echo "TFVARS File: $var_file_path"
 echo -e "-----------------------------------\n"
 echo -n "Proceed with these settings? (y/N): "
 read confirm
@@ -74,15 +93,9 @@ if [[ $confirm == [yY] ]]; then
         echo "Skipping Terraform init due to apply-only mode (-a)."
     fi
 
-    # Determine var-file path based on -p flag
-    var_file_prefix=""
-    if [[ $use_parent_directory == true ]]; then
-        var_file_prefix="../"
-    fi
-
     # Apply Terraform configuration
     echo "Applying Terraform configuration..."
-    terraform apply -var-file="${var_file_prefix}env-${AWS_ENV}.tfvars"
+    terraform apply -var-file="${var_file_path}"
 
     echo "✅ Terraform init and apply complete."
 else
