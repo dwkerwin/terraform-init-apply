@@ -81,7 +81,6 @@ Proceed with these settings? (y/N):
 Flags
 
 - `-a`: Skips terraform init and applies the configuration directly.
-- `-p`: Uses the parent directory (../) to locate env-<environment>.tfvars files for terraform apply.
 
 Example Commands
 
@@ -95,16 +94,4 @@ tia
 
 ```bash
 tia -a
-```
-
-- Use the parent directory for variable files:
-
-```bash
-tia -p
-```
-
-- Combine flags:
-
-```bash
-tia -a -p
 ```
