@@ -1,9 +1,47 @@
 #!/bin/zsh
 
+# Version
+TIA_VERSION="0.1.1"
+
+# ==============================
+# Config: project/company mappings
+# Edit these in one place to add or change prefixes
+# ==============================
+typeset -A PROFILE_BUCKET_PREFIX_MAP
+PROFILE_BUCKET_PREFIX_MAP=(
+  aug "augmetrics"
+  bsa "bsa"
+  vm  "vm"
+)
+
+typeset -A PROFILE_ALLOWED_DIR_PREFIXES_MAP
+PROFILE_ALLOWED_DIR_PREFIXES_MAP=(
+  aug "aug adw"
+  bsa "bsa"
+  vm  "vm"
+)
+
 # Default values for optional flags
 apply_only=false
 
+# Utility: echo the command exactly as it will be executed, then run it
+run_and_echo() {
+  local cmd="$1"; shift
+  local -a parts
+  parts=("$cmd" "$@")
+  print -r -- "+ ${(q)parts[@]}"
+  "$cmd" "$@"
+}
+
 # Parse optional flags
+# Handle --version early (non-blocking, before getopts)
+for arg in "$@"; do
+  if [[ "$arg" == "--version" || "$arg" == "-V" ]]; then
+    echo "tia $TIA_VERSION"
+    exit 0
+  fi
+done
+
 while getopts "a" opt; do
   case $opt in
     a) apply_only=true ;;
@@ -27,18 +65,63 @@ if [[ ${#missing_vars[@]} -gt 0 ]]; then
   exit 1
 fi
 
-# Determine the bucket prefix based on the profile
-PROFILE_PREFIX=${AWS_PROFILE%%-*} # Extract the first part of AWS_PROFILE
+# Resolve short account prefix from AWS_PROFILE using configured keys
+PROFILE_PREFIX=${AWS_PROFILE%%-*}
+lower_profile_prefix=${(L)PROFILE_PREFIX}
+ACCOUNT_PREFIX_SHORT=""
+for key in ${(k)PROFILE_BUCKET_PREFIX_MAP}; do
+  if [[ ${lower_profile_prefix} == ${key}* ]]; then
+    ACCOUNT_PREFIX_SHORT="$key"
+    break
+  fi
+done
 
-if [[ $PROFILE_PREFIX == aug* ]]; then
-    TF_BUCKET_PREFIX="augmetrics"
-elif [[ $PROFILE_PREFIX == bsa* ]]; then
-    TF_BUCKET_PREFIX="bsa"
-elif [[ $PROFILE_PREFIX == vm* ]]; then
-    TF_BUCKET_PREFIX="vm"
-else
-    echo "Error: Unrecognized profile prefix '$PROFILE_PREFIX'. Please use a supported profile."
-    exit 1
+if [[ -z "$ACCOUNT_PREFIX_SHORT" ]]; then
+  echo "Error: Unrecognized profile prefix '${PROFILE_PREFIX}'. Please use a supported profile."
+  exit 1
+fi
+
+# Early safety check: warn and prompt if AWS profile prefix doesn't match allowed ~/devel/<prefix>/ directory
+if [[ "$PWD" == "$HOME/devel/"* ]]; then
+    dir_after_devel="${PWD#"$HOME/devel/"}"
+    dir_account_prefix="${dir_after_devel%%/*}"
+    lower_dir_prefix=${(L)dir_account_prefix}
+    # Define allowed directory prefixes for a given AWS profile prefix (case-insensitive)
+    typeset -a allowed_dir_prefixes
+    allowed_string="${PROFILE_ALLOWED_DIR_PREFIXES_MAP[$ACCOUNT_PREFIX_SHORT]}"
+    [[ -n "$allowed_string" ]] && allowed_dir_prefixes=(${=allowed_string}) || allowed_dir_prefixes=()
+
+    # Only check when we have a directory prefix and known allowed prefixes
+    if [[ -n "$lower_dir_prefix" && ${#allowed_dir_prefixes[@]} -gt 0 ]]; then
+        local match_ok=false
+        for pfx in "${allowed_dir_prefixes[@]}"; do
+            if [[ "$lower_dir_prefix" == "$pfx" ]]; then
+                match_ok=true
+                break
+            fi
+        done
+
+        if [[ "$match_ok" != true ]]; then
+            printf "\n\033[1;31m⚠️⚠️⚠️  WARNING:\033[0m AWS_PROFILE '%s' does not appear to match directory prefix '%s' (%s)\n" \
+                "$AWS_PROFILE" "$dir_account_prefix" "$PWD"
+            echo "Allowed directory prefixes for this profile: ${allowed_dir_prefixes[*]}"
+            echo "Consider switching profiles (export AWS_PROFILE=...) or double-checking before applying."
+            echo -n "Are you sure you want to continue? (y/N): "
+            read mismatch_confirm
+            if [[ ! $mismatch_confirm == [yY] ]]; then
+                echo "❌ Operation canceled."
+                exit 1
+            fi
+            echo
+        fi
+    fi
+fi
+
+# Determine the bucket prefix based on the profile (from config map)
+TF_BUCKET_PREFIX="${PROFILE_BUCKET_PREFIX_MAP[$ACCOUNT_PREFIX_SHORT]}"
+if [[ -z "$TF_BUCKET_PREFIX" ]]; then
+  echo "Error: No bucket prefix configured for profile key '$ACCOUNT_PREFIX_SHORT' (from '$AWS_PROFILE')."
+  exit 1
 fi
 
 # Construct the full bucket name
@@ -84,18 +167,23 @@ if [[ $confirm == [yY] ]]; then
 
         # Terraform init with backend configuration
         echo "Initializing Terraform..."
-        terraform init \
-            -backend-config="bucket=${TF_BUCKET_PREFIX}-tfstate-${AWS_ENV}" \
-            -backend-config="key=${TF_KEY}/terraform.tfstate" \
-            -backend-config="region=us-east-1" \
+        INIT_ARGS=(
+            -backend-config="bucket=${TF_BUCKET_PREFIX}-tfstate-${AWS_ENV}"
+            -backend-config="key=${TF_KEY}/terraform.tfstate"
+            -backend-config="region=us-east-1"
             -backend-config="dynamodb_table=tfstate_${AWS_ENV}"
+        )
+        run_and_echo terraform init "${INIT_ARGS[@]}"
     else
         echo "Skipping Terraform init due to apply-only mode (-a)."
     fi
 
     # Apply Terraform configuration
     echo "Applying Terraform configuration..."
-    terraform apply -var-file="${var_file_path}"
+    APPLY_ARGS=(
+        -var-file "${var_file_path}"
+    )
+    run_and_echo terraform apply "${APPLY_ARGS[@]}"
 
     echo "✅ Terraform init and apply complete."
 else

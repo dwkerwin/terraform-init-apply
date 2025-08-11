@@ -21,6 +21,28 @@ Managing these variables manually and ensuring consistent application of Terrafo
 
 This tool is designed for use when working on Terraform modules locally, ensuring a faster and more streamlined workflow.
 
+## Configuration
+
+To add or modify AWS profile mappings, edit the configuration maps at the top of `tia.sh`:
+
+- **`PROFILE_BUCKET_PREFIX_MAP`**: Maps profile prefixes (e.g., `aug`, `vm`) to S3 bucket prefixes
+- **`PROFILE_ALLOWED_DIR_PREFIXES_MAP`**: Maps profile prefixes to allowed directory names under `~/devel/`
+
+Example:
+```bash
+PROFILE_BUCKET_PREFIX_MAP=(
+  aug "augmetrics"
+  vm  "vm"
+  newco "newcompany"
+)
+
+PROFILE_ALLOWED_DIR_PREFIXES_MAP=(
+  aug "aug adw"          # aug profiles work in ~/devel/aug/ or ~/devel/adw/
+  vm  "vm"               # vm profiles work in ~/devel/vm/
+  newco "newco nc"       # newco profiles work in ~/devel/newco/ or ~/devel/nc/
+)
+```
+
 ## Installation
 
 1. Clone this repository into your `~/bin` directory:
@@ -77,6 +99,26 @@ Proceed with these settings? (y/N):
 - Remove the .terraform directory to ensure a clean initialization.
 - Reinitialize Terraform with the correct backend configuration.
 - Apply the Terraform configuration with the appropriate variable file.
+
+Version
+
+Check the installed version:
+
+```bash
+tia --version
+```
+
+Safety Check: AWS profile vs directory prefix
+
+When the current working directory is under `~/devel/`, the script performs a safety check to help avoid mistakes across accounts. It compares the account prefix suggested by `AWS_PROFILE` (e.g., `vm`, `aug`, `bsa`) with the first directory segment under `~/devel/` (e.g., `~/devel/vm/...`). If they don't match, it prints a red warning and prompts you to confirm before continuing. This check is skipped when you are outside of `~/devel/`.
+
+If a mismatch is detected, the script will prompt:
+
+```text
+Are you sure you want to continue? (y/N):
+```
+
+Respond with `y` to continue, any other response cancels the run.
 
 Flags
 
