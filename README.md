@@ -10,7 +10,7 @@ In my Terraform module workflow, I always use the following environment variable
 
 - **`AWS_ENV`**: Specifies the AWS environment (e.g., `dev`, `prod`).
 - **`AWS_PROFILE`**: Specifies the AWS CLI profile to use for authentication.
-- **`TF_KEY`**: Specifies the unique Terraform state key for the module.
+- **`TF_KEY`**: Specifies the unique Terraform state key for the module. Can be provided as an environment variable OR as a local file named `TF_KEY` (file takes precedence).
 
 Managing these variables manually and ensuring consistent application of Terraform configurations outside of CI/CD can be time-consuming. This script simplifies the process by:
 
@@ -80,7 +80,7 @@ tia
 
 Example Workflow
 
-1.	The script will review the required environment variables (AWS_ENV, AWS_PROFILE, and TF_KEY) and ensure they are set.
+1.	The script will review the required configuration (AWS_ENV, AWS_PROFILE, and TF_KEY) and ensure they are available. TF_KEY can be provided either as an environment variable or as a local file named `TF_KEY` - the file takes precedence if both exist.
 2.	It will display the current settings for your review:
 
 ```bash
@@ -137,3 +137,26 @@ tia
 ```bash
 tia -a
 ```
+
+## TF_KEY Configuration
+
+The `TF_KEY` parameter can be provided in two ways, with local files taking precedence:
+
+1. **Local file (preferred)**: Create a file named `TF_KEY` in your project directory containing the key on a single line:
+   ```bash
+   echo "my-project-terraform-key" > TF_KEY
+   ```
+
+2. **Environment variable (fallback)**: Export the traditional environment variable:
+   ```bash
+   export TF_KEY="my-project-terraform-key"
+   ```
+
+When both exist, the local `TF_KEY` file takes precedence. This allows you to:
+- Commit project-specific Terraform keys to your repositories
+- Override global environment settings on a per-project basis
+- Maintain backward compatibility with existing workflows
+
+The script will display which source is being used:
+- `🔑 Using TF_KEY from local file: ./TF_KEY`
+- `🔑 Using TF_KEY from environment variable`
