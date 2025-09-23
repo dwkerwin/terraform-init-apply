@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # Version
-TIA_VERSION="0.1.1"
+TIA_VERSION="0.2.0"
 
 # ==============================
 # Config: project/company mappings
@@ -50,11 +50,28 @@ while getopts "a" opt; do
 done
 shift $((OPTIND - 1))
 
+# Resolve TF_KEY: first check for local file, then fall back to environment variable
+tf_key_resolved=""
+if [[ -f "./TF_KEY" ]]; then
+    # Read the first line of the TF_KEY file, stripping any trailing whitespace/newlines
+    tf_key_resolved=$(head -n 1 ./TF_KEY | tr -d '\n\r')
+    if [[ -z "$tf_key_resolved" ]]; then
+        echo "❌ Error: TF_KEY file exists but is empty"
+        exit 1
+    fi
+    echo "🔑 Using TF_KEY from local file: ./TF_KEY"
+    TF_KEY="$tf_key_resolved"
+elif [[ -n "$TF_KEY" ]]; then
+    echo "🔑 Using TF_KEY from environment variable"
+else
+    tf_key_resolved=""
+fi
+
 # Check for required environment variables
 missing_vars=()
 [[ -z "$AWS_ENV" ]] && missing_vars+=("AWS_ENV")
 [[ -z "$AWS_PROFILE" ]] && missing_vars+=("AWS_PROFILE")
-[[ -z "$TF_KEY" ]] && missing_vars+=("TF_KEY")
+[[ -z "$tf_key_resolved" && -z "$TF_KEY" ]] && missing_vars+=("TF_KEY")
 
 if [[ ${#missing_vars[@]} -gt 0 ]]; then
   echo -e "\n❌ Missing required environment variables:"
