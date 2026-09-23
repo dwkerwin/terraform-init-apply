@@ -429,6 +429,64 @@ test_different_environments() {
   fi
 }
 
+
+# ==============================
+# Test: tia args output for CommerceSong (account-ID backend) profiles
+# ==============================
+test_args_cs_profile() {
+  run_test
+  local output_dev output_prod
+  output_dev=$(AWS_ENV="dev" AWS_PROFILE="csdev" TF_KEY="my-service" "$TIA" args 2>&1)
+  output_prod=$(AWS_ENV="prod" AWS_PROFILE="csprod" TF_KEY="my-service" "$TIA" args 2>&1)
+
+  local all_ok=true
+  [[ "$output_dev" != *'bucket=terraform-state-478543871670"'* ]] && all_ok=false
+  [[ "$output_dev" != *'dynamodb_table=terraform-state-locks-478543871670"'* ]] && all_ok=false
+  [[ "$output_prod" != *'bucket=terraform-state-162109821699"'* ]] && all_ok=false
+  [[ "$output_prod" != *'dynamodb_table=terraform-state-locks-162109821699"'* ]] && all_ok=false
+  [[ "$output_prod" != *"key=my-service/terraform.tfstate"* ]] && all_ok=false
+  [[ "$output_prod" != *"TF_BUCKET=s3://terraform-state-162109821699"* ]] && all_ok=false
+  # Must not fall back to prefix-style naming
+  [[ "$output_dev$output_prod" == *"tfstate_"* ]] && all_ok=false
+
+  if [[ "$all_ok" == true ]]; then
+    pass "tia args uses account-ID bucket/table names for cs profiles"
+  else
+    fail "tia args uses account-ID bucket/table names for cs profiles" "terraform-state-<account id> / terraform-state-locks-<account id>" "$output_dev
+$output_prod"
+  fi
+}
+
+# ==============================
+# Test: cs profile with an AWS_ENV that has no account ID mapped
+# ==============================
+test_cs_unknown_env() {
+  run_test
+  local output
+  local exit_code=0
+  output=$(AWS_ENV="staging" AWS_PROFILE="csdev" TF_KEY="test" "$TIA" args 2>&1) || exit_code=$?
+  if [[ $exit_code -ne 0 && "$output" == *"No AWS account ID configured"* ]]; then
+    pass "cs profile with unmapped AWS_ENV produces error"
+  else
+    fail "cs profile with unmapped AWS_ENV produces error" "Error about missing account ID" "exit=$exit_code, output=$output"
+  fi
+}
+
+# ==============================
+# Test: tia args --eval works for cs profiles
+# ==============================
+test_args_eval_cs_profile() {
+  run_test
+  local output
+  output=$(AWS_ENV="prod" AWS_PROFILE="csprod" TF_KEY="svc" "$TIA" args --eval 2>&1)
+  eval "$output"
+  if [[ "$INIT_ARGS" == *"bucket=terraform-state-162109821699"* && "$INIT_ARGS" == *"dynamodb_table=terraform-state-locks-162109821699"* ]]; then
+    pass "tia args --eval works for cs profiles"
+  else
+    fail "tia args --eval works for cs profiles" "INIT_ARGS with account-ID names" "$output"
+  fi
+}
+
 # ==============================
 # Run all tests
 # ==============================
@@ -456,6 +514,9 @@ test_args_aug_profile
 test_args_vm_profile
 test_args_eval_format
 test_args_eval_executable
+test_args_cs_profile
+test_cs_unknown_env
+test_args_eval_cs_profile
 
 # Subcommand argument validation tests
 test_import_requires_args

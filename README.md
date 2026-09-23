@@ -84,6 +84,7 @@ To add or modify AWS profile mappings, edit the configuration maps at the top of
 
 - **`PROFILE_BUCKET_PREFIX_MAP`**: Maps profile prefixes (e.g., `aug`, `vm`) to S3 bucket prefixes
 - **`PROFILE_ALLOWED_DIR_PREFIXES_MAP`**: Maps profile prefixes to allowed directory names under `~/devel/`
+- **`PROFILE_ACCOUNT_ID_MAP`**: For accounts whose state backend is named by AWS account ID rather than a bucket prefix (the CommerceSong convention: bucket `terraform-state-<account id>`, lock table `terraform-state-locks-<account id>`). Keys are `<profile prefix>:<AWS_ENV>`, e.g. `cs:dev`. A profile prefix listed here doesn't need a `PROFILE_BUCKET_PREFIX_MAP` entry.
 
 Example:
 ```bash
@@ -97,6 +98,11 @@ PROFILE_ALLOWED_DIR_PREFIXES_MAP=(
   aug "aug adw"          # aug profiles work in ~/devel/aug/ or ~/devel/adw/
   vm  "vm"               # vm profiles work in ~/devel/vm/
   newco "newco nc"       # newco profiles work in ~/devel/newco/ or ~/devel/nc/
+)
+
+PROFILE_ACCOUNT_ID_MAP=(
+  cs:dev  "478543871670"  # csdev  -> terraform-state-478543871670
+  cs:prod "162109821699"  # csprod -> terraform-state-162109821699
 )
 ```
 

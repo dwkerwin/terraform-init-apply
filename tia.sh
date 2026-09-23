@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # Version
-TIA_VERSION="0.3.0"
+TIA_VERSION="0.4.0"
 
 # ==============================
 # Config: project/company mappings
@@ -19,6 +19,17 @@ PROFILE_ALLOWED_DIR_PREFIXES_MAP=(
   aug "aug adw"
   bsa "bsa"
   vm  "vm"
+  cs  "commercesong dwk efr evc forgotpw markviewapp"
+)
+
+# Profiles whose state backend is named by AWS account ID instead of bucket prefix:
+#   bucket terraform-state-<account id>, lock table terraform-state-locks-<account id>
+# (the CommerceSong org-reusable-workflows convention). Keys are "<profile key>:<AWS_ENV>".
+typeset -A PROFILE_ACCOUNT_ID_MAP
+PROFILE_ACCOUNT_ID_MAP=(
+  cs:dev    "478543871670"
+  cs:prod   "162109821699"
+  cs:master "775893492659"
 )
 
 # Default values for optional flags
@@ -149,7 +160,7 @@ fi
 PROFILE_PREFIX=${AWS_PROFILE%%-*}
 lower_profile_prefix=${(L)PROFILE_PREFIX}
 ACCOUNT_PREFIX_SHORT=""
-for key in ${(k)PROFILE_BUCKET_PREFIX_MAP}; do
+for key in ${(k)PROFILE_BUCKET_PREFIX_MAP} ${(u)${(k)PROFILE_ACCOUNT_ID_MAP%%:*}}; do
   if [[ ${lower_profile_prefix} == ${key}* ]]; then
     ACCOUNT_PREFIX_SHORT="$key"
     break
@@ -197,15 +208,27 @@ perform_safety_check() {
   fi
 }
 
-# Determine the bucket prefix based on the profile (from config map)
-TF_BUCKET_PREFIX="${PROFILE_BUCKET_PREFIX_MAP[$ACCOUNT_PREFIX_SHORT]}"
-if [[ -z "$TF_BUCKET_PREFIX" ]]; then
-  echo "Error: No bucket prefix configured for profile key '$ACCOUNT_PREFIX_SHORT' (from '$AWS_PROFILE')."
-  exit 1
+# Determine the state bucket and lock table names from the profile (from config maps)
+if [[ -n "${(M)${(k)PROFILE_ACCOUNT_ID_MAP}:#${ACCOUNT_PREFIX_SHORT}:*}" ]]; then
+  TF_ACCOUNT_ID="${PROFILE_ACCOUNT_ID_MAP[${ACCOUNT_PREFIX_SHORT}:${AWS_ENV}]}"
+  if [[ -z "$TF_ACCOUNT_ID" ]]; then
+    echo "Error: No AWS account ID configured for profile key '$ACCOUNT_PREFIX_SHORT' and AWS_ENV '$AWS_ENV'."
+    exit 1
+  fi
+  TF_STATE_BUCKET_NAME="terraform-state-${TF_ACCOUNT_ID}"
+  TF_LOCK_TABLE_NAME="terraform-state-locks-${TF_ACCOUNT_ID}"
+else
+  TF_BUCKET_PREFIX="${PROFILE_BUCKET_PREFIX_MAP[$ACCOUNT_PREFIX_SHORT]}"
+  if [[ -z "$TF_BUCKET_PREFIX" ]]; then
+    echo "Error: No bucket prefix configured for profile key '$ACCOUNT_PREFIX_SHORT' (from '$AWS_PROFILE')."
+    exit 1
+  fi
+  TF_STATE_BUCKET_NAME="${TF_BUCKET_PREFIX}-tfstate-${AWS_ENV}"
+  TF_LOCK_TABLE_NAME="tfstate_${AWS_ENV}"
 fi
 
 # Construct the full bucket name
-TF_BUCKET="s3://${TF_BUCKET_PREFIX}-tfstate-${AWS_ENV}"
+TF_BUCKET="s3://${TF_STATE_BUCKET_NAME}"
 
 # Check for tfvars file location
 var_file="env-${AWS_ENV}.tfvars"
@@ -220,10 +243,10 @@ fi
 # Build init args array
 build_init_args() {
   INIT_ARGS=(
-    -backend-config="bucket=${TF_BUCKET_PREFIX}-tfstate-${AWS_ENV}"
+    -backend-config="bucket=${TF_STATE_BUCKET_NAME}"
     -backend-config="key=${TF_KEY}/terraform.tfstate"
     -backend-config="region=us-east-1"
-    -backend-config="dynamodb_table=tfstate_${AWS_ENV}"
+    -backend-config="dynamodb_table=${TF_LOCK_TABLE_NAME}"
   )
 }
 
@@ -284,10 +307,10 @@ cmd_args() {
     echo ""
     echo "# Terraform init:"
     echo "terraform init \\"
-    echo "  -backend-config=\"bucket=${TF_BUCKET_PREFIX}-tfstate-${AWS_ENV}\" \\"
+    echo "  -backend-config=\"bucket=${TF_STATE_BUCKET_NAME}\" \\"
     echo "  -backend-config=\"key=${TF_KEY}/terraform.tfstate\" \\"
     echo "  -backend-config=\"region=us-east-1\" \\"
-    echo "  -backend-config=\"dynamodb_table=tfstate_${AWS_ENV}\""
+    echo "  -backend-config=\"dynamodb_table=${TF_LOCK_TABLE_NAME}\""
     echo ""
     if [[ -n "$var_file_path" ]]; then
       echo "# Terraform plan/apply/destroy:"
